@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -15,7 +15,6 @@
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
     font-family:"Helvetica Neue",Arial,sans-serif;}
-
 
   /* top bar */
   .bar{
@@ -34,7 +33,6 @@
     box-shadow:0 0 12px var(--accent);}
   .count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
 
-
   /* reel container */
   .reel{
     height:100%;width:100%;max-width:440px;margin:0 auto;
@@ -43,16 +41,16 @@
   }
   .reel::-webkit-scrollbar{display:none;}
 
-
   .slide{
     height:100%;width:100%;scroll-snap-align:start;scroll-snap-stop:always;
     position:relative;display:flex;align-items:center;justify-content:center;
     background:#000;overflow:hidden;
   }
-  .slide iframe{
+  .slide iframe, .slide .player, .slide .player iframe{
     width:100%;height:100%;border:0;
     /* shorts are vertical; fill the frame */
   }
+  .slide .player{position:absolute;inset:0;}
   .slide .ph{
     position:absolute;inset:0;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:14px;color:var(--muted);
@@ -62,7 +60,6 @@
     border-radius:50%;animation:spin 1s linear infinite;
   }
   @keyframes spin{to{transform:rotate(360deg);}}
-
 
   /* right action rail */
   .rail{
@@ -79,7 +76,6 @@
   .rail button:active{transform:scale(.85);background:var(--accent);}
   .rail .lbl{font-size:11px;color:#fff;margin-top:-14px;font-weight:600;}
 
-
   /* hint */
   .hint{
     position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
@@ -88,7 +84,6 @@
     pointer-events:none;
   }
   @keyframes bob{0%,100%{transform:translate(-50%,0);}50%{transform:translate(-50%,-7px);}}
-
 
   /* loading / error full screens */
   .screen{
@@ -107,30 +102,24 @@
 </head>
 <body>
 
-
   <div class="bar">
     <h1><span class="dot"></span>Shorts</h1>
     <span class="count" id="count"></span>
   </div>
-
 
   <div id="loading" class="screen">
     <div class="ring"></div>
     <p>Loading shorts from your sheet…</p>
   </div>
 
-
   <div id="error" class="screen hidden">
     <h2>Couldn't load videos</h2>
     <p id="errmsg"></p>
   </div>
 
-
   <div class="reel" id="reel"></div>
 
-
   <div class="hint" id="hint">↑ Swipe up for next</div>
-
 
 <script>
 /* ============================================================
@@ -141,7 +130,6 @@
    one per row. A header row is auto-detected and skipped.
    ============================================================ */
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRmyyHl5CzTqa7FmIGxUJYcx3Ez6NWSqJCPNwkgGgVHY0SV8fIuZBDtloYhxOnVk95geOQvz9Wk5p9T/pub?output=csv";
-
 
 /* ---------- helpers ---------- */
 function extractId(raw){
@@ -156,7 +144,6 @@ function extractId(raw){
   const m2 = raw.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
   return m2 ? m2[1] : null;
 }
-
 
 // minimal CSV parse (handles quoted fields & commas)
 function parseCSV(text){
@@ -179,7 +166,6 @@ function parseCSV(text){
   return rows;
 }
 
-
 const reel=document.getElementById('reel');
 const loading=document.getElementById('loading');
 const errBox=document.getElementById('error');
@@ -188,54 +174,79 @@ const countEl=document.getElementById('count');
 const hint=document.getElementById('hint');
 let ids=[];
 
-
 function showError(msg){
   loading.classList.add('hidden');
   errBox.classList.remove('hidden');
   errMsg.innerHTML=msg;
 }
 
+let muted=true;                 // autoplay requires muted start
+const players={};               // index -> YT.Player
+let activeIndex=-1;
+let apiReady=false;
+let pendingInit=false;
+
+// load the YouTube IFrame API
+(function(){
+  const s=document.createElement('script');
+  s.src="https://www.youtube.com/iframe_api";
+  document.head.appendChild(s);
+})();
+window.onYouTubeIframeAPIReady=function(){
+  apiReady=true;
+  if(pendingInit) buildPlayers();
+};
 
 function buildSlide(id,index){
   const slide=document.createElement('div');
   slide.className='slide';
   slide.dataset.id=id;
   slide.dataset.index=index;
+  // <div> placeholder that the API replaces with an <iframe>
   slide.innerHTML=`
-    <div class="ph"><div class="ring"></div><span>Tap or scroll to play</span></div>
+    <div class="ph"><div class="ring"></div><span>Loading…</span></div>
+    <div class="player" id="player-${index}"></div>
     <div class="rail">
-      <button title="Open on YouTube" onclick="window.open('https://youtube.com/shorts/${id}','_blank')">▶</button>
+      <button title="Play / pause" data-toggle>⏯</button>
       <button title="Mute / unmute" data-mute>🔊</button>
-      <button title="Share" onclick="navigator.clipboard&&navigator.clipboard.writeText('https://youtube.com/shorts/${id}')">↗</button>
+      <button title="Open on YouTube" onclick="window.open('https://youtube.com/shorts/${id}','_blank')">▶</button>
+      <button title="Copy link" onclick="navigator.clipboard&&navigator.clipboard.writeText('https://youtube.com/shorts/${id}')">↗</button>
     </div>`;
   return slide;
 }
 
-
-// lazy-load iframe only for the visible slide
-let muted=true;
-function loadVideo(slide){
-  if(slide.querySelector('iframe')) return;
-  const id=slide.dataset.id;
-  const ph=slide.querySelector('.ph');
-  const ifr=document.createElement('iframe');
-  ifr.allow="autoplay; encrypted-media; picture-in-picture";
-  ifr.allowFullscreen=true;
-  ifr.src=`https://www.youtube.com/embed/${id}?autoplay=1&mute=${muted?1:0}&playsinline=1&rel=0&loop=1&playlist=${id}&controls=1&modestbranding=1`;
-  ifr.onload=()=>ph&&ph.remove();
-  slide.insertBefore(ifr,slide.querySelector('.rail'));
-}
-function unloadVideo(slide){
-  const ifr=slide.querySelector('iframe');
-  if(ifr) ifr.remove();
-  if(!slide.querySelector('.ph')){
-    const ph=document.createElement('div');
-    ph.className='ph';
-    ph.innerHTML='<div class="ring"></div><span>Tap or scroll to play</span>';
-    slide.insertBefore(ph,slide.querySelector('.rail'));
-  }
+function buildPlayers(){
+  ids.forEach((id,i)=>{
+    players[i]=new YT.Player(`player-${i}`,{
+      videoId:id,
+      playerVars:{
+        autoplay:0, controls:1, rel:0, playsinline:1,
+        modestbranding:1, loop:1, playlist:id, mute:1
+      },
+      events:{
+        onReady:(e)=>{
+          const slide=e.target.getIframe().closest('.slide');
+          const ph=slide&&slide.querySelector('.ph');
+          if(ph) ph.remove();
+          // if this slide is already the active one, start it
+          if(+slide.dataset.index===activeIndex) playIndex(activeIndex);
+        }
+      }
+    });
+  });
 }
 
+function playIndex(i){
+  Object.keys(players).forEach(k=>{
+    const p=players[k];
+    if(!p||!p.pauseVideo) return;
+    if(+k===i){
+      try{ muted?p.mute():p.unMute(); p.playVideo(); }catch(_){}
+    }else{
+      try{ p.pauseVideo(); p.seekTo(0); }catch(_){}
+    }
+  });
+}
 
 function init(){
   if(!ids.length){showError("No valid YouTube Short links were found in the sheet's first column.");return;}
@@ -243,36 +254,42 @@ function init(){
   countEl.textContent=`${ids.length} clips`;
   ids.forEach((id,i)=>reel.appendChild(buildSlide(id,i)));
 
+  // build players now if API is ready, else wait for callback
+  if(apiReady) buildPlayers(); else pendingInit=true;
 
-  // play the slide that is in view, pause others
+  // detect which slide is in view → play it, pause the rest
   const io=new IntersectionObserver(entries=>{
     entries.forEach(e=>{
-      if(e.isIntersecting&&e.intersectionRatio>0.6){
-        loadVideo(e.target);
-        countEl.textContent=`${(+e.target.dataset.index)+1} / ${ids.length}`;
-      }else{
-        unloadVideo(e.target);
+      if(e.isIntersecting&&e.intersectionRatio>=0.6){
+        activeIndex=+e.target.dataset.index;
+        countEl.textContent=`${activeIndex+1} / ${ids.length}`;
+        playIndex(activeIndex);
       }
     });
   },{root:reel,threshold:[0,0.6,1]});
   reel.querySelectorAll('.slide').forEach(s=>io.observe(s));
 
-
-  // mute toggle (delegated)
+  // rail controls (delegated)
   reel.addEventListener('click',ev=>{
-    const b=ev.target.closest('[data-mute]');
-    if(!b) return;
-    muted=!muted;
-    b.textContent=muted?'🔊':'🔇';
-    // reload current iframe with new mute state
-    const slide=b.closest('.slide');
-    unloadVideo(slide);loadVideo(slide);
+    const mb=ev.target.closest('[data-mute]');
+    if(mb){
+      muted=!muted;
+      reel.querySelectorAll('[data-mute]').forEach(b=>b.textContent=muted?'🔊':'🔇');
+      const p=players[activeIndex];
+      if(p){ muted?p.mute():p.unMute(); }
+      return;
+    }
+    const tb=ev.target.closest('[data-toggle]');
+    if(tb){
+      const p=players[activeIndex];
+      if(p&&p.getPlayerState){
+        p.getPlayerState()===1 ? p.pauseVideo() : (muted?p.mute():p.unMute(),p.playVideo());
+      }
+    }
   });
-
 
   setTimeout(()=>hint&&hint.classList.add('hidden'),4000);
 }
-
 
 async function start(){
   if(SHEET_CSV_URL.includes("PASTE_YOUR")){
