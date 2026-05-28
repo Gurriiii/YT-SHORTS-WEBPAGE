@@ -5,57 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shorts Reel Player</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
-    
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }
-        
         .swiper { width: 100%; height: 100vh; }
         .swiper-slide { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #000; }
-
-        /* The Cropping Container: Hides YT UI elements by pushing them out of bounds */
-        .video-container {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        /* Scale the iframe so the controls/logo are cut off by the overflow hidden container */
+        .video-container { position: relative; width: 100%; height: 100%; overflow: hidden; }
+        
+        /* Cropping out the YouTube controls, branding header, and logo buttons */
         .video-container iframe {
             position: absolute;
-            top: -5%;
-            left: -10%;
-            width: 120%;
-            height: 110%;
-            pointer-events: none; /* Prevents user clicking YT logo/links directly */
+            top: -6%;
+            left: -12%;
+            width: 124%;
+            height: 112%;
+            pointer-events: none; 
         }
-
-        /* Interaction Overlay: Crucial for allowing swiping and intercepting taps to unmute */
-        .interaction-overlay {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 10;
-            background: transparent;
-        }
-
-        /* Unmute Overlay Prompt for first-time load */
+        .interaction-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; background: transparent; }
         .unmute-btn {
-            position: absolute;
-            bottom: 50px; 
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8); 
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3); 
-            padding: 12px 24px; 
-            border-radius: 30px;
-            cursor: pointer; 
-            z-index: 20; 
-            font-size: 16px;
-            font-weight: bold;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-            transition: opacity 0.3s ease;
+            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8); color: white; border: 1px solid rgba(255,255,255,0.3); 
+            padding: 12px 24px; border-radius: 30px; cursor: pointer; z-index: 20; font-size: 16px; font-weight: bold;
         }
     </style>
 </head>
@@ -63,52 +33,64 @@
 
     <div class="swiper">
         <div class="swiper-wrapper" id="video-wrapper">
-            </div>
+            <div style="color:white; text-align:center; padding-top:45vh; width:100%;">Connecting to Sheet API...</div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
 
     <script>
-        // Your Google Sheet CSV URL integrated
-        const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRmyyHl5CzTqa7FmIGxUJYcx3Ez6NWSqJCPNwkgGgVHY0SV8fIuZBDtloYhxOnVk95geOQvz9Wk5p9T/pub?output=csv"; 
+        // 1. PLACE YOUR SPREADSHEET ID HERE
+        const SPREADSHEET_ID = "1NhMLplg1pl_ul58NZ6kq_ZMorRshr1vTz2FrwPte2r1cYSpjAMZFbefq"; 
         
+        // Google Visualization API Endpoint (Bypasses Apps Script blocks completely)
+        const DATA_URL = `https://docs.google.com/spreadsheets/d/${1Pt7v_Lrl0SPhkBUGVGQ3YV4h9UXd-TfZUXcc3PJbdIc}/gviz/tq?tqx=out:json`;
+
         let players = {};
         let videoIds = [];
         let swiper;
-        let isMuted = true; // Browser policy forces a muted start until user interaction
+        let isMuted = true;
 
-        // 1. Fetch YouTube Shorts Links from Google Sheet
         async function fetchVideosFromSheet() {
             try {
-                const response = await fetch(SHEET_CSV_URL);
-                const data = await response.text();
+                const response = await fetch(DATA_URL);
+                const rawText = await response.text();
                 
-                // Regex to accurately parse short IDs from various YouTube URL formats
+                // Clean Google's standard security text wrapper to parse clean JSON data
+                const jsonString = rawText.substring(rawText.indexOf('{'), rawText.lastIndexOf('}') + 1);
+                const jsonResult = JSON.parse(jsonString);
+                
+                const rows = jsonResult.table.rows;
                 const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/;
-                const rows = data.split(/\r?\n/);
                 
                 rows.forEach(row => {
-                    const match = row.match(regExp);
-                    if (match && match[2].length === 11) {
-                        videoIds.push(match[2].trim());
+                    // Check first column (Column A)
+                    if (row.c && row.c[0] && row.c[0].v) {
+                        const cellValue = String(row.c[0].v);
+                        const match = cellValue.match(regExp);
+                        if (match && match[2].length === 11) {
+                            videoIds.push(match[2].trim());
+                        }
                     }
                 });
 
                 if (videoIds.length === 0) {
-                    document.getElementById('video-wrapper').innerHTML = "<div style='color:white; padding:20px; text-align:center;'>No valid YouTube links found in the spreadsheet. Make sure URLs are full format (e.g., https://youtube.com/shorts/... )</div>";
+                    document.getElementById('video-wrapper').innerHTML = "<div style='color:white; padding:20px; text-align:center; margin-top:45vh; width:100%;'>No active YouTube Shorts URLs found in column A.</div>";
                     return;
                 }
 
                 buildSwiperSlides();
             } catch (error) {
-                console.error("Error fetching sheet data:", error);
+                console.error(error);
+                document.getElementById('video-wrapper').innerHTML = `<div style='color:red; text-align:center; padding-top:45vh; width:100%;'>Fetch Blocked. Go to File > Share in your Google Sheet and change access to 'Anyone with the link'.</div>`;
             }
         }
 
-        // 2. Build DOM structures for Swiper
         function buildSwiperSlides() {
             const wrapper = document.getElementById('video-wrapper');
+            wrapper.innerHTML = ''; 
+            
             videoIds.forEach((id, index) => {
                 const slide = document.createElement('div');
                 slide.className = 'swiper-slide';
@@ -117,19 +99,17 @@
                         <div id="player-${index}"></div>
                         <div class="interaction-overlay"></div>
                     </div>
-                    ${index === 0 ? '<button class="unmute-btn" id="unmute-hint">🔊 Tap Screen to Unmute</button>' : ''}
+                    ${index === 0 ? '<button class="unmute-btn" id="unmute-hint">🔊 Swipe or Tap to Audio</button>' : ''}
                 `;
                 wrapper.appendChild(slide);
             });
 
             initSwiper();
-            // Initialize YouTube players if the Global API script has loaded
             if (typeof YT !== 'undefined' && YT.loaded) {
                 initYTPlayers();
             }
         }
 
-        // 3. Initialize Swiper Slider
         function initSwiper() {
             swiper = new Swiper('.swiper', {
                 direction: 'vertical',
@@ -143,7 +123,6 @@
             });
         }
 
-        // 4. Initialize YouTube API Players (called automatically by YouTube Script)
         function onYouTubeIframeAPIReady() {
             if (videoIds.length > 0) {
                 initYTPlayers();
@@ -158,36 +137,31 @@
                         'autoplay': index === 0 ? 1 : 0,
                         'controls': 0,
                         'rel': 0,
-                        'showinfo': 0,
                         'modestbranding': 1,
                         'loop': 1,
-                        'playlist': id, // Required for looping single videos
+                        'playlist': id, 
                         'playsinline': 1,
                         'iv_load_policy': 3
                     },
                     events: {
                         'onReady': (event) => {
                             if (index === 0) {
-                                event.target.mute(); // Force mute on 1st video for browser autoplay compatibility
+                                event.target.mute(); 
                                 event.target.playVideo();
                             }
                         }
                     }
                 });
             });
-
             setupInteractionListeners();
         }
 
-        // 5. Playback Switcher
         function manageVideoPlayback(activeIndex) {
             Object.keys(players).forEach(index => {
                 const player = players[index];
                 if (player && typeof player.playVideo === 'function') {
                     if (parseInt(index) === activeIndex) {
-                        if (!isMuted) {
-                            player.unmute();
-                        }
+                        if (!isMuted) player.unmute();
                         player.playVideo();
                     } else {
                         player.pauseVideo();
@@ -196,7 +170,6 @@
             });
         }
 
-        // Handle unmuting globally via the user's first swipe or tap
         function setupInteractionListeners() {
             const handleUserInteraction = () => {
                 if (isMuted) {
@@ -208,18 +181,14 @@
                     }
                     const hint = document.getElementById('unmute-hint');
                     if (hint) hint.remove();
-                    
-                    // Remove listeners once sound state is unlocked globally
                     document.removeEventListener('click', handleUserInteraction);
                     document.removeEventListener('touchstart', handleUserInteraction);
                 }
             };
-
             document.addEventListener('click', handleUserInteraction);
             document.addEventListener('touchstart', handleUserInteraction);
         }
 
-        // Run the pipeline
         fetchVideosFromSheet();
     </script>
 </body>
