@@ -1,316 +1,226 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Shorts Reel</title>
-<style>
-  :root{
-    --bg:#0a0a0c;
-    --ink:#f5f5f7;
-    --muted:#8a8a92;
-    --accent:#ff3a5e;
-    --card:#141418;
-  }
-  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
-    font-family:"Helvetica Neue",Arial,sans-serif;}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shorts Reel Player</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }
+        
+        .swiper { width: 100%; height: 100vh; }
+        .swiper-slide { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: #000; }
 
-  /* top bar */
-  .bar{
-    position:fixed;top:0;left:50%;transform:translateX(-50%);
-    z-index:50;width:100%;max-width:440px;
-    display:flex;align-items:center;justify-content:space-between;
-    padding:14px 18px;
-    background:linear-gradient(to bottom,rgba(0,0,0,.55),transparent);
-    pointer-events:none;
-  }
-  .bar h1{
-    font-size:17px;font-weight:800;letter-spacing:-.4px;
-    display:flex;align-items:center;gap:7px;
-  }
-  .bar h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);
-    box-shadow:0 0 12px var(--accent);}
-  .count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
+        /* The Cropping Container: Hides YT UI elements by pushing them out of bounds */
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
 
-  /* reel container */
-  .reel{
-    height:100%;width:100%;max-width:440px;margin:0 auto;
-    overflow-y:scroll;scroll-snap-type:y mandatory;
-    scrollbar-width:none;background:#000;
-  }
-  .reel::-webkit-scrollbar{display:none;}
+        /* Scale the iframe so the controls/logo are cut off by the overflow hidden container */
+        .video-container iframe {
+            position: absolute;
+            top: -5%;
+            left: -10%;
+            width: 120%;
+            height: 110%;
+            pointer-events: none; /* Prevents user clicking YT logo/links directly */
+        }
 
-  .slide{
-    height:100%;width:100%;scroll-snap-align:start;scroll-snap-stop:always;
-    position:relative;display:flex;align-items:center;justify-content:center;
-    background:#000;overflow:hidden;
-  }
-  .slide iframe, .slide .player, .slide .player iframe{
-    width:100%;height:100%;border:0;
-    /* shorts are vertical; fill the frame */
-  }
-  .slide .player{position:absolute;inset:0;}
-  .slide .ph{
-    position:absolute;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:14px;color:var(--muted);
-  }
-  .slide .ph .ring{
-    width:42px;height:42px;border:3px solid #2a2a30;border-top-color:var(--accent);
-    border-radius:50%;animation:spin 1s linear infinite;
-  }
-  @keyframes spin{to{transform:rotate(360deg);}}
+        /* Interaction Overlay: Crucial for allowing swiping and intercepting taps to unmute */
+        .interaction-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10;
+            background: transparent;
+        }
 
-  /* right action rail */
-  .rail{
-    position:absolute;right:12px;bottom:90px;z-index:20;
-    display:flex;flex-direction:column;gap:20px;align-items:center;
-  }
-  .rail button{
-    background:rgba(20,20,24,.5);backdrop-filter:blur(8px);
-    border:1px solid rgba(255,255,255,.1);color:var(--ink);
-    width:46px;height:46px;border-radius:50%;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;font-size:20px;
-    transition:transform .15s,background .2s;
-  }
-  .rail button:active{transform:scale(.85);background:var(--accent);}
-  .rail .lbl{font-size:11px;color:#fff;margin-top:-14px;font-weight:600;}
-
-  /* hint */
-  .hint{
-    position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
-    z-index:40;color:var(--muted);font-size:12px;display:flex;
-    align-items:center;gap:7px;animation:bob 1.8s ease-in-out infinite;
-    pointer-events:none;
-  }
-  @keyframes bob{0%,100%{transform:translate(-50%,0);}50%{transform:translate(-50%,-7px);}}
-
-  /* loading / error full screens */
-  .screen{
-    position:fixed;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:16px;text-align:center;
-    padding:30px;background:var(--bg);z-index:60;
-  }
-  .screen h2{font-size:20px;font-weight:800;}
-  .screen p{color:var(--muted);font-size:14px;line-height:1.6;max-width:320px;}
-  .screen .ring{width:48px;height:48px;border:4px solid #2a2a30;
-    border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;}
-  .screen code{background:var(--card);padding:2px 6px;border-radius:5px;
-    color:var(--accent);font-size:12px;}
-  .hidden{display:none!important;}
-</style>
+        /* Unmute Overlay Prompt for first-time load */
+        .unmute-btn {
+            position: absolute;
+            bottom: 50px; 
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8); 
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3); 
+            padding: 12px 24px; 
+            border-radius: 30px;
+            cursor: pointer; 
+            z-index: 20; 
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: opacity 0.3s ease;
+        }
+    </style>
 </head>
 <body>
 
-  <div class="bar">
-    <h1><span class="dot"></span>Shorts</h1>
-    <span class="count" id="count"></span>
-  </div>
+    <div class="swiper">
+        <div class="swiper-wrapper" id="video-wrapper">
+            </div>
+    </div>
 
-  <div id="loading" class="screen">
-    <div class="ring"></div>
-    <p>Loading shorts from your sheet…</p>
-  </div>
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
 
-  <div id="error" class="screen hidden">
-    <h2>Couldn't load videos</h2>
-    <p id="errmsg"></p>
-  </div>
+    <script>
+        // Your Google Sheet CSV URL integrated
+        const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRmyyHl5CzTqa7FmIGxUJYcx3Ez6NWSqJCPNwkgGgVHY0SV8fIuZBDtloYhxOnVk95geOQvz9Wk5p9T/pub?output=csv"; 
+        
+        let players = {};
+        let videoIds = [];
+        let swiper;
+        let isMuted = true; // Browser policy forces a muted start until user interaction
 
-  <div class="reel" id="reel"></div>
+        // 1. Fetch YouTube Shorts Links from Google Sheet
+        async function fetchVideosFromSheet() {
+            try {
+                const response = await fetch(SHEET_CSV_URL);
+                const data = await response.text();
+                
+                // Regex to accurately parse short IDs from various YouTube URL formats
+                const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/;
+                const rows = data.split(/\r?\n/);
+                
+                rows.forEach(row => {
+                    const match = row.match(regExp);
+                    if (match && match[2].length === 11) {
+                        videoIds.push(match[2].trim());
+                    }
+                });
 
-  <div class="hint" id="hint">↑ Swipe up for next</div>
+                if (videoIds.length === 0) {
+                    document.getElementById('video-wrapper').innerHTML = "<div style='color:white; padding:20px; text-align:center;'>No valid YouTube links found in the spreadsheet. Make sure URLs are full format (e.g., https://youtube.com/shorts/... )</div>";
+                    return;
+                }
 
-<script>
-/* ============================================================
-   CONFIG — paste your Google Sheet CSV link here.
-   How: in Google Sheets → File → Share → Publish to web →
-   choose the sheet → "Comma-separated values (.csv)" → Publish.
-   Put each YouTube Short URL (or video ID) in the FIRST column,
-   one per row. A header row is auto-detected and skipped.
-   ============================================================ */
-const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRmyyHl5CzTqa7FmIGxUJYcx3Ez6NWSqJCPNwkgGgVHY0SV8fIuZBDtloYhxOnVk95geOQvz9Wk5p9T/pub?output=csv";
-
-/* ---------- helpers ---------- */
-function extractId(raw){
-  if(!raw) return null;
-  raw = raw.trim();
-  // already a bare 11-char id
-  if(/^[a-zA-Z0-9_-]{11}$/.test(raw)) return raw;
-  // youtube shorts / watch / youtu.be / embed
-  const m = raw.match(/(?:shorts\/|watch\?v=|youtu\.be\/|embed\/|\/v\/)([a-zA-Z0-9_-]{11})/);
-  if(m) return m[1];
-  // generic ?v=
-  const m2 = raw.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
-  return m2 ? m2[1] : null;
-}
-
-// minimal CSV parse (handles quoted fields & commas)
-function parseCSV(text){
-  const rows=[];let row=[],cur="",q=false;
-  for(let i=0;i<text.length;i++){
-    const c=text[i];
-    if(q){
-      if(c==='"'&&text[i+1]==='"'){cur+='"';i++;}
-      else if(c==='"'){q=false;}
-      else cur+=c;
-    }else{
-      if(c==='"')q=true;
-      else if(c===','){row.push(cur);cur="";}
-      else if(c==='\n'){row.push(cur);rows.push(row);row=[];cur="";}
-      else if(c==='\r'){}
-      else cur+=c;
-    }
-  }
-  if(cur.length||row.length){row.push(cur);rows.push(row);}
-  return rows;
-}
-
-const reel=document.getElementById('reel');
-const loading=document.getElementById('loading');
-const errBox=document.getElementById('error');
-const errMsg=document.getElementById('errmsg');
-const countEl=document.getElementById('count');
-const hint=document.getElementById('hint');
-let ids=[];
-
-function showError(msg){
-  loading.classList.add('hidden');
-  errBox.classList.remove('hidden');
-  errMsg.innerHTML=msg;
-}
-
-let muted=true;                 // autoplay requires muted start
-const players={};               // index -> YT.Player
-let activeIndex=-1;
-let apiReady=false;
-let pendingInit=false;
-
-// load the YouTube IFrame API
-(function(){
-  const s=document.createElement('script');
-  s.src="https://www.youtube.com/iframe_api";
-  document.head.appendChild(s);
-})();
-window.onYouTubeIframeAPIReady=function(){
-  apiReady=true;
-  if(pendingInit) buildPlayers();
-};
-
-function buildSlide(id,index){
-  const slide=document.createElement('div');
-  slide.className='slide';
-  slide.dataset.id=id;
-  slide.dataset.index=index;
-  // <div> placeholder that the API replaces with an <iframe>
-  slide.innerHTML=`
-    <div class="ph"><div class="ring"></div><span>Loading…</span></div>
-    <div class="player" id="player-${index}"></div>
-    <div class="rail">
-      <button title="Play / pause" data-toggle>⏯</button>
-      <button title="Mute / unmute" data-mute>🔊</button>
-      <button title="Open on YouTube" onclick="window.open('https://youtube.com/shorts/${id}','_blank')">▶</button>
-      <button title="Copy link" onclick="navigator.clipboard&&navigator.clipboard.writeText('https://youtube.com/shorts/${id}')">↗</button>
-    </div>`;
-  return slide;
-}
-
-function buildPlayers(){
-  ids.forEach((id,i)=>{
-    players[i]=new YT.Player(`player-${i}`,{
-      videoId:id,
-      playerVars:{
-        autoplay:0, controls:1, rel:0, playsinline:1,
-        modestbranding:1, loop:1, playlist:id, mute:1
-      },
-      events:{
-        onReady:(e)=>{
-          const slide=e.target.getIframe().closest('.slide');
-          const ph=slide&&slide.querySelector('.ph');
-          if(ph) ph.remove();
-          // if this slide is already the active one, start it
-          if(+slide.dataset.index===activeIndex) playIndex(activeIndex);
+                buildSwiperSlides();
+            } catch (error) {
+                console.error("Error fetching sheet data:", error);
+            }
         }
-      }
-    });
-  });
-}
 
-function playIndex(i){
-  Object.keys(players).forEach(k=>{
-    const p=players[k];
-    if(!p||!p.pauseVideo) return;
-    if(+k===i){
-      try{ muted?p.mute():p.unMute(); p.playVideo(); }catch(_){}
-    }else{
-      try{ p.pauseVideo(); p.seekTo(0); }catch(_){}
-    }
-  });
-}
+        // 2. Build DOM structures for Swiper
+        function buildSwiperSlides() {
+            const wrapper = document.getElementById('video-wrapper');
+            videoIds.forEach((id, index) => {
+                const slide = document.createElement('div');
+                slide.className = 'swiper-slide';
+                slide.innerHTML = `
+                    <div class="video-container">
+                        <div id="player-${index}"></div>
+                        <div class="interaction-overlay"></div>
+                    </div>
+                    ${index === 0 ? '<button class="unmute-btn" id="unmute-hint">🔊 Tap Screen to Unmute</button>' : ''}
+                `;
+                wrapper.appendChild(slide);
+            });
 
-function init(){
-  if(!ids.length){showError("No valid YouTube Short links were found in the sheet's first column.");return;}
-  loading.classList.add('hidden');
-  countEl.textContent=`${ids.length} clips`;
-  ids.forEach((id,i)=>reel.appendChild(buildSlide(id,i)));
+            initSwiper();
+            // Initialize YouTube players if the Global API script has loaded
+            if (typeof YT !== 'undefined' && YT.loaded) {
+                initYTPlayers();
+            }
+        }
 
-  // build players now if API is ready, else wait for callback
-  if(apiReady) buildPlayers(); else pendingInit=true;
+        // 3. Initialize Swiper Slider
+        function initSwiper() {
+            swiper = new Swiper('.swiper', {
+                direction: 'vertical',
+                mousewheel: true,
+                threshold: 15,
+                on: {
+                    slideChange: function () {
+                        manageVideoPlayback(this.activeIndex);
+                    }
+                }
+            });
+        }
 
-  // detect which slide is in view → play it, pause the rest
-  const io=new IntersectionObserver(entries=>{
-    entries.forEach(e=>{
-      if(e.isIntersecting&&e.intersectionRatio>=0.6){
-        activeIndex=+e.target.dataset.index;
-        countEl.textContent=`${activeIndex+1} / ${ids.length}`;
-        playIndex(activeIndex);
-      }
-    });
-  },{root:reel,threshold:[0,0.6,1]});
-  reel.querySelectorAll('.slide').forEach(s=>io.observe(s));
+        // 4. Initialize YouTube API Players (called automatically by YouTube Script)
+        function onYouTubeIframeAPIReady() {
+            if (videoIds.length > 0) {
+                initYTPlayers();
+            }
+        }
 
-  // rail controls (delegated)
-  reel.addEventListener('click',ev=>{
-    const mb=ev.target.closest('[data-mute]');
-    if(mb){
-      muted=!muted;
-      reel.querySelectorAll('[data-mute]').forEach(b=>b.textContent=muted?'🔊':'🔇');
-      const p=players[activeIndex];
-      if(p){ muted?p.mute():p.unMute(); }
-      return;
-    }
-    const tb=ev.target.closest('[data-toggle]');
-    if(tb){
-      const p=players[activeIndex];
-      if(p&&p.getPlayerState){
-        p.getPlayerState()===1 ? p.pauseVideo() : (muted?p.mute():p.unMute(),p.playVideo());
-      }
-    }
-  });
+        function initYTPlayers() {
+            videoIds.forEach((id, index) => {
+                players[index] = new YT.Player(`player-${index}`, {
+                    videoId: id,
+                    playerVars: {
+                        'autoplay': index === 0 ? 1 : 0,
+                        'controls': 0,
+                        'rel': 0,
+                        'showinfo': 0,
+                        'modestbranding': 1,
+                        'loop': 1,
+                        'playlist': id, // Required for looping single videos
+                        'playsinline': 1,
+                        'iv_load_policy': 3
+                    },
+                    events: {
+                        'onReady': (event) => {
+                            if (index === 0) {
+                                event.target.mute(); // Force mute on 1st video for browser autoplay compatibility
+                                event.target.playVideo();
+                            }
+                        }
+                    }
+                });
+            });
 
-  setTimeout(()=>hint&&hint.classList.add('hidden'),4000);
-}
+            setupInteractionListeners();
+        }
 
-async function start(){
-  if(SHEET_CSV_URL.includes("PASTE_YOUR")){
-    showError("Add your Google Sheet link first. Open this file and replace <code>SHEET_CSV_URL</code> with your published CSV link (File → Share → Publish to web → CSV).");
-    return;
-  }
-  try{
-    const res=await fetch(SHEET_CSV_URL);
-    if(!res.ok) throw new Error("HTTP "+res.status);
-    const text=await res.text();
-    const rows=parseCSV(text);
-    rows.forEach(r=>{
-      const id=extractId(r[0]);
-      if(id&&!ids.includes(id)) ids.push(id);
-    });
-    init();
-  }catch(err){
-    showError("Could not fetch the sheet. Make sure it is <b>Published to web as CSV</b> and the link is correct.<br><br><code>"+err.message+"</code>");
-  }
-}
-start();
-</script>
+        // 5. Playback Switcher
+        function manageVideoPlayback(activeIndex) {
+            Object.keys(players).forEach(index => {
+                const player = players[index];
+                if (player && typeof player.playVideo === 'function') {
+                    if (parseInt(index) === activeIndex) {
+                        if (!isMuted) {
+                            player.unmute();
+                        }
+                        player.playVideo();
+                    } else {
+                        player.pauseVideo();
+                    }
+                }
+            });
+        }
+
+        // Handle unmuting globally via the user's first swipe or tap
+        function setupInteractionListeners() {
+            const handleUserInteraction = () => {
+                if (isMuted) {
+                    isMuted = false;
+                    const activePlayer = players[swiper.activeIndex];
+                    if (activePlayer && typeof activePlayer.unmute === 'function') {
+                        activePlayer.unmute();
+                        activePlayer.playVideo();
+                    }
+                    const hint = document.getElementById('unmute-hint');
+                    if (hint) hint.remove();
+                    
+                    // Remove listeners once sound state is unlocked globally
+                    document.removeEventListener('click', handleUserInteraction);
+                    document.removeEventListener('touchstart', handleUserInteraction);
+                }
+            };
+
+            document.addEventListener('click', handleUserInteraction);
+            document.addEventListener('touchstart', handleUserInteraction);
+        }
+
+        // Run the pipeline
+        fetchVideosFromSheet();
+    </script>
 </body>
 </html>
